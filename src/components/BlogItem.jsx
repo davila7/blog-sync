@@ -1,6 +1,6 @@
 import React from 'react'
 
-const BlogItem = ({ blog, index, onSync, syncStatus }) => {
+const BlogItem = ({ blog, index, onSync, syncStatus, onManualStatusChange }) => {
   const formatDate = (dateString) => {
     const date = new Date(dateString)
     return date.toLocaleDateString('en-US', {
@@ -21,52 +21,63 @@ const BlogItem = ({ blog, index, onSync, syncStatus }) => {
     return 'not-synced'
   }
 
-  const renderSyncButton = (platform, displayName, emoji) => {
+  const renderSyncButton = (platform, displayName) => {
     const state = getSyncButtonState(platform)
     const isDisabled = state === 'syncing'
     
-    let buttonClass = 'terminal-button'
     let buttonText = `Sync to ${displayName}`
-    let buttonEmoji = emoji
     
     switch (state) {
       case 'syncing':
-        buttonClass = 'terminal-button warning'
         buttonText = 'Syncing...'
-        buttonEmoji = '⟳'
         break
       case 'success':
-        buttonClass = 'terminal-button primary'
-        buttonText = 'Sync Complete'
-        buttonEmoji = '✓'
+        buttonText = 'Synced'
         break
       case 'error':
-        buttonClass = 'terminal-button error'
-        buttonText = 'Sync Failed'
-        buttonEmoji = '✗'
+        buttonText = 'Failed - Retry'
         break
       case 'synced':
-        buttonClass = 'terminal-button primary'
         buttonText = 'Re-sync'
-        buttonEmoji = '↻'
         break
     }
 
     return (
       <button
-        className={buttonClass}
+        className={`terminal-button ${state === 'synced' || state === 'success' ? 'primary' : ''}`}
         onClick={() => onSync(blog.id, platform)}
         disabled={isDisabled}
         title={`${buttonText} - ${displayName}`}
       >
-        <span style={{ 
-          animation: state === 'syncing' ? 'spin 1s linear infinite' : 'none',
-          display: 'inline-block'
-        }}>
-          {buttonEmoji}
-        </span>
         {buttonText}
       </button>
+    )
+  }
+
+  const renderManualStatusCheckbox = (platform, displayName) => {
+    const isPublished = blog.published && blog.published[platform]
+    
+    return (
+      <label style={{ 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '6px',
+        fontSize: '11px',
+        color: 'var(--text-secondary)',
+        cursor: 'pointer',
+        userSelect: 'none'
+      }}>
+        <input
+          type="checkbox"
+          checked={isPublished || false}
+          onChange={(e) => onManualStatusChange && onManualStatusChange(blog.id, platform, e.target.checked)}
+          style={{
+            marginRight: '2px',
+            transform: 'scale(0.8)'
+          }}
+        />
+        Published to {displayName}
+      </label>
     )
   }
 
@@ -75,21 +86,13 @@ const BlogItem = ({ blog, index, onSync, syncStatus }) => {
       <div className="terminal-list-item-header">
         <div style={{ flex: 1 }}>
           <h3 className="terminal-list-item-title">
-            <span style={{ 
-              color: 'var(--text-muted)', 
-              fontSize: '12px', 
-              marginRight: '8px' 
-            }}>
-              [{(index + 1).toString().padStart(2, '0')}]
-            </span>
             {blog.title}
           </h3>
           
           <div className="terminal-list-item-meta">
-            <span>📅 {formatDate(blog.publishedAt)}</span>
-            <span>⏱️ {blog.readingTime}</span>
-            <span>👏 {blog.claps}</span>
-            <span>💬 {blog.responses}</span>
+            <span>{formatDate(blog.publishedAt)}</span>
+            <span>{blog.readingTime}</span>
+            <span>{blog.claps} claps</span>
           </div>
         </div>
 
@@ -109,56 +112,47 @@ const BlogItem = ({ blog, index, onSync, syncStatus }) => {
         {blog.description}
       </div>
 
-      <div className="terminal-list-item-meta" style={{ marginTop: '12px' }}>
-        <span style={{ color: 'var(--text-accent)' }}>
-          Tags:
-        </span>
-        {blog.tags.map((tag, tagIndex) => (
-          <span key={tagIndex} style={{ 
-            background: 'var(--bg-primary)',
-            padding: '2px 6px',
-            borderRadius: '3px',
-            border: '1px solid var(--border-primary)',
-            fontSize: '11px',
-            color: 'var(--text-secondary)'
-          }}>
-            #{tag}
-          </span>
-        ))}
-      </div>
+      {blog.tags.length > 0 && (
+        <div className="terminal-list-item-meta" style={{ marginTop: '8px' }}>
+          {blog.tags.map((tag, tagIndex) => (
+            <span key={tagIndex} style={{ 
+              background: 'var(--bg-primary)',
+              padding: '2px 6px',
+              borderRadius: '3px',
+              border: '1px solid var(--border-primary)',
+              fontSize: '11px',
+              color: 'var(--text-secondary)'
+            }}>
+              #{tag}
+            </span>
+          ))}
+        </div>
+      )}
 
       <div className="terminal-list-item-actions">
-        {renderSyncButton('devto', 'Dev.to', '🚀')}
-        {renderSyncButton('hashnode', 'Hashnode', '📝')}
-        
-        <button 
-          className="terminal-button"
-          onClick={() => window.open(`https://medium.com/@user/post-${blog.id}`, '_blank')}
-          title="View on Medium"
-        >
-          <span>🔗</span>
-          View Original
-        </button>
+        {renderSyncButton('devto', 'Dev.to')}
+        {renderSyncButton('hashnode', 'Hashnode')}
       </div>
 
-      {/* Command line representation */}
       <div style={{ 
         marginTop: '12px',
-        padding: '8px 12px',
-        background: 'var(--bg-primary)',
-        border: '1px solid var(--border-primary)',
-        borderRadius: '4px',
-        fontSize: '11px',
-        fontFamily: 'JetBrains Mono, monospace',
-        color: 'var(--text-muted)',
-        overflow: 'hidden'
+        paddingTop: '8px',
+        borderTop: '1px solid var(--border-primary)',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '6px'
       }}>
-        <div className="terminal-flex" style={{ gap: '4px' }}>
-          <span className="terminal-prompt">$</span>
-          <code style={{ color: 'var(--text-secondary)' }}>
-            sync --post-id {blog.id} --platforms {blog.synced.devto ? 'devto✓' : 'devto✗'},{blog.synced.hashnode ? 'hashnode✓' : 'hashnode✗'}
-          </code>
+        <div style={{ 
+          fontSize: '11px', 
+          color: 'var(--text-muted)', 
+          marginBottom: '4px',
+          textTransform: 'uppercase',
+          letterSpacing: '0.5px'
+        }}>
+          Manual Status
         </div>
+        {renderManualStatusCheckbox('devto', 'Dev.to')}
+        {renderManualStatusCheckbox('hashnode', 'Hashnode')}
       </div>
     </div>
   )

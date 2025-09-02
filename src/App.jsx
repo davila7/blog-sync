@@ -3,81 +3,16 @@ import Header from './components/Header'
 import Search from './components/Search'
 import BlogList from './components/BlogList'
 import SyncButtons from './components/SyncButtons'
+import ScrapingStatus from './components/ScrapingStatus'
+import CacheManager from './components/CacheManager'
+import ApiStatus from './components/ApiStatus'
+import PostExportModal from './components/PostExportModal'
 import mediumApi from './services/mediumApi'
+import mediumScraper from './services/mediumScraper'
+import cacheService from './services/cacheService'
+import devtoApi from './services/devtoApi'
+import hashnodeApi from './services/hashnodeApi'
 
-// Mock blog data for fallback
-const mockBlogs = [
-  {
-    id: 1,
-    title: "Getting Started with React Hooks: A Complete Guide",
-    description: "Learn how to use React Hooks effectively in your applications with practical examples and best practices.",
-    publishedAt: "2024-01-15",
-    tags: ["react", "javascript", "hooks", "frontend"],
-    readingTime: "8 min read",
-    claps: 142,
-    responses: 23,
-    synced: {
-      devto: true,
-      hashnode: false
-    }
-  },
-  {
-    id: 2,
-    title: "Building Scalable Node.js Applications with TypeScript",
-    description: "Discover how to architect robust backend services using Node.js and TypeScript, including best practices for error handling and testing.",
-    publishedAt: "2024-01-10",
-    tags: ["nodejs", "typescript", "backend", "architecture"],
-    readingTime: "12 min read",
-    claps: 89,
-    responses: 15,
-    synced: {
-      devto: false,
-      hashnode: true
-    }
-  },
-  {
-    id: 3,
-    title: "The Future of Web Development: Trends to Watch in 2024",
-    description: "Explore the emerging technologies and frameworks that are shaping the future of web development this year.",
-    publishedAt: "2024-01-08",
-    tags: ["webdev", "trends", "future", "technology"],
-    readingTime: "6 min read",
-    claps: 201,
-    responses: 34,
-    synced: {
-      devto: true,
-      hashnode: true
-    }
-  },
-  {
-    id: 4,
-    title: "Mastering CSS Grid: Layout Techniques for Modern Web Design",
-    description: "Deep dive into CSS Grid layout system with practical examples and advanced techniques for creating responsive designs.",
-    publishedAt: "2024-01-05",
-    tags: ["css", "grid", "design", "frontend"],
-    readingTime: "10 min read",
-    claps: 156,
-    responses: 19,
-    synced: {
-      devto: false,
-      hashnode: false
-    }
-  },
-  {
-    id: 5,
-    title: "API Design Best Practices: RESTful Services That Scale",
-    description: "Learn how to design and implement RESTful APIs that are maintainable, scalable, and developer-friendly.",
-    publishedAt: "2024-01-03",
-    tags: ["api", "rest", "backend", "design"],
-    readingTime: "9 min read",
-    claps: 178,
-    responses: 27,
-    synced: {
-      devto: true,
-      hashnode: false
-    }
-  }
-]
 
 function App() {
   const [blogs, setBlogs] = useState([])
@@ -86,60 +21,108 @@ function App() {
   const [searchTerm, setSearchTerm] = useState('')
   const [syncStatus, setSyncStatus] = useState({})
   const [error, setError] = useState(null)
+  const [exportModal, setExportModal] = useState({ show: false, post: null, platform: null })
 
-  // Load blogs from Medium API or fallback to mock data
+  // Load blogs from cache first, then optionally sync new posts
   useEffect(() => {
-    const loadBlogs = async () => {
-      setIsLoading(true)
-      setError(null)
-      
-      try {
-        if (mediumApi.isConfigured()) {
-          console.log('Loading blogs from Medium API...')
-          const response = await mediumApi.getAllPosts()
-          
-          // Transform Medium API response to our format
-          const transformedBlogs = response.data.map((post, index) => ({
-            id: post.id || index + 1,
-            title: post.title,
-            description: post.content ? post.content.substring(0, 200) + '...' : 'No description available',
-            publishedAt: new Date(post.publishedAt || post.createdAt).toISOString().split('T')[0],
-            tags: post.tags || [],
-            readingTime: `${Math.ceil((post.content?.length || 1000) / 200)} min read`,
-            claps: post.virtues?.clap || 0,
-            responses: post.virtues?.response || 0,
-            synced: {
-              devto: false,
-              hashnode: false
-            }
-          }))
-          
-          setBlogs(transformedBlogs)
-          setFilteredBlogs(transformedBlogs)
-        } else {
-          console.warn('Medium API not configured, using mock data')
-          const config = mediumApi.getConfigurationHelp()
-          setError(config.message + ' - Using mock data for demonstration')
-          
-          // Simulate API delay for mock data
-          await new Promise(resolve => setTimeout(resolve, 1500))
-          setBlogs(mockBlogs)
-          setFilteredBlogs(mockBlogs)
-        }
-      } catch (err) {
-        console.error('Error loading blogs:', err)
-        setError(`Failed to load blog posts: ${err.message} - Using mock data`)
-        
-        // Fallback to mock data
-        setBlogs(mockBlogs)
-        setFilteredBlogs(mockBlogs)
-      } finally {
-        setIsLoading(false)
-      }
-    }
-
-    loadBlogs()
+    loadBlogsFromCache()
   }, [])
+
+  const loadBlogsFromCache = async () => {
+    setIsLoading(true)
+    setError(null)
+    
+    try {
+      const cachedPosts = await cacheService.getCachedPosts()
+      
+      if (cachedPosts.length > 0) {
+        console.log(`Loaded ${cachedPosts.length} posts from cache`)
+        setBlogs(cachedPosts)
+        setFilteredBlogs(cachedPosts)
+        setError(`Loaded ${cachedPosts.length} posts from cache`)
+      } else {
+        console.log('No cached posts found')
+        setError('No posts found - click "Sync New Posts" to load from Medium')
+        setBlogs([])
+        setFilteredBlogs([])
+      }
+    } catch (error) {
+      console.error('Error loading from cache:', error)
+      setError('Error loading cached posts - please try syncing')
+      setBlogs([])
+      setFilteredBlogs([])
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const refreshPosts = async () => {
+    const username = import.meta.env.VITE_MEDIUM_USERNAME
+    const enableScraping = import.meta.env.VITE_ENABLE_SCRAPING === 'true'
+    
+    if (!enableScraping || !username) {
+      throw new Error('Scraping not configured. Please set VITE_MEDIUM_USERNAME in .env')
+    }
+    
+    try {
+      // Get current cached posts
+      const cachedPosts = await cacheService.getCachedPosts()
+      
+      // Try Medium API first (if configured)
+      if (mediumApi.isConfigured()) {
+        console.log('Syncing from Medium API...')
+        const response = await mediumApi.getAllPosts()
+        
+        const transformedBlogs = response.data.map((post, index) => ({
+          id: post.id || index + 1,
+          title: post.title,
+          description: post.content ? post.content.substring(0, 200) + '...' : 'No description available',
+          publishedAt: new Date(post.publishedAt || post.createdAt).toISOString().split('T')[0],
+          tags: post.tags || [],
+          readingTime: `${Math.ceil((post.content?.length || 1000) / 200)} min read`,
+          claps: post.virtues?.clap || 0,
+          responses: post.virtues?.response || 0,
+          synced: {
+            devto: false,
+            hashnode: false
+          },
+          published: {
+            devto: false,
+            hashnode: false
+          }
+        }))
+        
+        // Merge with cached posts and save
+        const mergedPosts = cacheService.mergePosts(cachedPosts, transformedBlogs)
+        await cacheService.savePosts(mergedPosts)
+        
+        setBlogs(mergedPosts)
+        setFilteredBlogs(mergedPosts)
+        setError(`Synced from Medium API - ${transformedBlogs.length} new posts`)
+        return
+      }
+
+      // Try scraping for new posts only
+      console.log(`Syncing new posts from @${username}...`)
+      const newPosts = await mediumScraper.getNewPosts(username, cachedPosts)
+      
+      if (newPosts.length > 0) {
+        // Merge new posts with cached posts
+        const mergedPosts = cacheService.mergePosts(cachedPosts, newPosts)
+        await cacheService.savePosts(mergedPosts)
+        
+        setBlogs(mergedPosts)
+        setFilteredBlogs(mergedPosts)
+        setError(`Sync complete - found ${newPosts.length} new posts`)
+      } else {
+        setError('Sync complete - no new posts found')
+      }
+      
+    } catch (err) {
+      console.error('Error syncing posts:', err)
+      throw err
+    }
+  }
 
   // Filter blogs based on search term
   useEffect(() => {
@@ -156,50 +139,107 @@ function App() {
   }, [searchTerm, blogs])
 
   const handleSync = async (blogId, platform) => {
+    const blog = blogs.find(b => b.id === blogId)
+    if (!blog) {
+      console.error('Blog post not found:', blogId)
+      return
+    }
+
     setSyncStatus(prev => ({
       ...prev,
       [`${blogId}-${platform}`]: 'syncing'
     }))
 
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000))
+      let result = null
       
-      // Update blog sync status
-      setBlogs(prev => prev.map(blog => 
-        blog.id === blogId 
-          ? { ...blog, synced: { ...blog.synced, [platform]: true } }
-          : blog
-      ))
+      // Check if API is configured before attempting sync
+      if (platform === 'devto') {
+        if (!devtoApi.isConfigured()) {
+          throw new Error('Dev.to API key not configured. Please add VITE_DEVTO_API_KEY to your .env file.')
+        }
+        
+        // Check if article already exists
+        const exists = await devtoApi.articleExists(blog)
+        if (exists) {
+          throw new Error('Article already exists on Dev.to')
+        }
+        
+        result = await devtoApi.publishArticle(blog)
+        
+      } else if (platform === 'hashnode') {
+        if (!hashnodeApi.isConfigured()) {
+          throw new Error('Hashnode API key not configured. Please add VITE_HASHNODE_API_KEY to your .env file.')
+        }
+        
+        // Check if article already exists
+        const exists = await hashnodeApi.articleExists(blog)
+        if (exists) {
+          throw new Error('Article already exists on Hashnode')
+        }
+        
+        result = await hashnodeApi.publishArticle(blog)
+      } else {
+        throw new Error(`Unknown platform: ${platform}`)
+      }
 
-      setSyncStatus(prev => ({
-        ...prev,
-        [`${blogId}-${platform}`]: 'success'
-      }))
+      if (result.success) {
+        console.log(`Successfully synced "${blog.title}" to ${platform}:`, result.url)
+        
+        // Update blog sync status in memory and cache
+        const updatedBlogs = blogs.map(b => 
+          b.id === blogId 
+            ? { 
+                ...b, 
+                synced: { 
+                  ...b.synced, 
+                  [platform]: true 
+                },
+                urls: {
+                  ...b.urls,
+                  [platform]: result.url
+                }
+              }
+            : b
+        )
+        
+        setBlogs(updatedBlogs)
+        await cacheService.savePosts(updatedBlogs)
 
-      // Clear success status after 3 seconds
-      setTimeout(() => {
-        setSyncStatus(prev => {
-          const newStatus = { ...prev }
-          delete newStatus[`${blogId}-${platform}`]
-          return newStatus
-        })
-      }, 3000)
+        setSyncStatus(prev => ({
+          ...prev,
+          [`${blogId}-${platform}`]: 'success'
+        }))
+        
+        // Show success message longer for real syncs
+        setTimeout(() => {
+          setSyncStatus(prev => {
+            const newStatus = { ...prev }
+            delete newStatus[`${blogId}-${platform}`]
+            return newStatus
+          })
+        }, 5000)
+        
+      } else {
+        throw new Error('Sync failed - no success response')
+      }
 
     } catch (err) {
-      setSyncStatus(prev => ({
-        ...prev,
-        [`${blogId}-${platform}`]: 'error'
-      }))
-
-      // Clear error status after 5 seconds
-      setTimeout(() => {
-        setSyncStatus(prev => {
-          const newStatus = { ...prev }
-          delete newStatus[`${blogId}-${platform}`]
-          return newStatus
-        })
-      }, 5000)
+      console.error(`Sync to ${platform} failed:`, err.message)
+      
+      // Instead of showing error, show export modal for manual sync
+      setExportModal({ 
+        show: true, 
+        post: blog, 
+        platform: platform 
+      })
+      
+      // Clear syncing status immediately
+      setSyncStatus(prev => {
+        const newStatus = { ...prev }
+        delete newStatus[`${blogId}-${platform}`]
+        return newStatus
+      })
     }
   }
 
@@ -213,41 +253,68 @@ function App() {
     }
   }
 
+  const handleManualStatusChange = async (blogId, platform, isPublished) => {
+    try {
+      // Update blog publication status in memory
+      const updatedBlogs = blogs.map(b => 
+        b.id === blogId 
+          ? { 
+              ...b, 
+              published: { 
+                ...b.published, 
+                [platform]: isPublished 
+              }
+            }
+          : b
+      )
+      
+      setBlogs(updatedBlogs)
+      
+      // Update filtered blogs to reflect changes immediately
+      const updatedFilteredBlogs = filteredBlogs.map(b => 
+        b.id === blogId 
+          ? { 
+              ...b, 
+              published: { 
+                ...b.published, 
+                [platform]: isPublished 
+              }
+            }
+          : b
+      )
+      setFilteredBlogs(updatedFilteredBlogs)
+      
+      // Save to cache
+      await cacheService.savePosts(updatedBlogs)
+      
+      console.log(`Marked post "${updatedBlogs.find(b => b.id === blogId)?.title}" as ${isPublished ? 'published' : 'not published'} on ${platform}`)
+      
+    } catch (err) {
+      console.error('Error updating publication status:', err)
+      setError('Failed to update publication status')
+    }
+  }
+
   return (
     <div className="terminal">
       <div className="terminal-window">
         <Header />
         
         <div className="terminal-content">
-          <div className="ascii-art">
-            {`
- ██████╗ ██╗      ██████╗  ██████╗     ███████╗██╗   ██╗███╗   ██╗ ██████╗
- ██╔══██╗██║     ██╔═══██╗██╔════╝     ██╔════╝╚██╗ ██╔╝████╗  ██║██╔════╝
- ██████╔╝██║     ██║   ██║██║  ███╗    ███████╗ ╚████╔╝ ██╔██╗ ██║██║     
- ██╔══██╗██║     ██║   ██║██║   ██║    ╚════██║  ╚██╔╝  ██║╚██╗██║██║     
- ██████╔╝███████╗╚██████╔╝╚██████╔╝    ███████║   ██║   ██║ ╚████║╚██████╗
- ╚═════╝ ╚══════╝ ╚═════╝  ╚═════╝     ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝
-            `}
-          </div>
 
-          <div className="terminal-command">
-            <div className="terminal-command-header">
-              <h1 className="terminal-command-title">
-                <span className="terminal-prompt">$</span>
-                blog-sync --platform medium --target all
-              </h1>
-            </div>
-            <p className="terminal-command-subtitle">
-              Synchronize Medium blog posts to Dev.to and Hashnode platforms
-            </p>
-          </div>
+          <ScrapingStatus 
+            isLoading={isLoading}
+            error={error}
+            postsCount={blogs.length}
+            username={import.meta.env.VITE_MEDIUM_USERNAME}
+          />
 
-          {error && (
-            <div className="terminal-error">
-              <div className="terminal-error-title">Connection Error</div>
-              <p>{error}</p>
-            </div>
-          )}
+          <CacheManager 
+            onRefresh={refreshPosts}
+            isLoading={isLoading}
+          />
+
+          <ApiStatus />
 
           <Search 
             searchTerm={searchTerm}
@@ -267,16 +334,19 @@ function App() {
             isLoading={isLoading}
             onSync={handleSync}
             syncStatus={syncStatus}
+            onManualStatusChange={handleManualStatusChange}
           />
-
-          <div className="terminal-command" style={{ marginTop: '32px', opacity: 0.7 }}>
-            <div className="terminal-flex">
-              <span className="terminal-prompt success">✓</span>
-              <span>Terminal session active - Ready for sync operations</span>
-            </div>
-          </div>
         </div>
       </div>
+
+      {/* Export Modal */}
+      {exportModal.show && (
+        <PostExportModal
+          post={exportModal.post}
+          platform={exportModal.platform}
+          onClose={() => setExportModal({ show: false, post: null, platform: null })}
+        />
+      )}
     </div>
   )
 }

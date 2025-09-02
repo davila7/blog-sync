@@ -1,2 +1,12 @@
 .env
 node_modules
+dist/
+*.log
+
+# Cache files - user's personal data
+data/*.json
+!data/.gitkeep
+
+# Build outputs
+build/
+.vite/

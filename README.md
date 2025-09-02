@@ -86,25 +86,47 @@ The app will automatically open at `http://localhost:3000`
 Create a `.env` file in the project root:
 
 ```env
-# Medium API Configuration
+# Medium Configuration
 VITE_MEDIUM_ACCESS_TOKEN=your_medium_access_token_here
+VITE_MEDIUM_USERNAME=your_medium_username
+
+# Scraping Configuration
+VITE_ENABLE_SCRAPING=true
 
 # Future integrations (not yet implemented)
 VITE_DEVTO_API_KEY=your_devto_api_key
 VITE_HASHNODE_API_KEY=your_hashnode_api_key
 ```
 
-### **Important: Medium API Access**
+### **🔑 Medium Data Sources**
 
-**Medium stopped issuing new API tokens in 2024**. If you don't have an existing token:
-- The app will work with mock data for demonstration
-- All UI functionality remains fully functional
-- You can still test sync operations (they simulate API calls)
+Since **Medium stopped issuing new API tokens in 2024**, this app provides multiple ways to get your posts:
 
-If you have an existing Medium integration token:
-1. Add it to the `.env` file
-2. Restart the development server
-3. The app will automatically fetch your real posts
+#### **Option 1: Web Scraping (Recommended)**
+```env
+VITE_MEDIUM_USERNAME=your_username
+VITE_ENABLE_SCRAPING=true
+VITE_MAX_POSTS=0
+VITE_MAX_TAGS=10
+```
+- Uses RSS feeds and HTML parsing to extract your posts
+- No API key required - just your public username
+- Works with any public Medium profile
+- Automatically falls back between RSS and HTML scraping
+- **VITE_MAX_POSTS=0**: Gets ALL posts (unlimited)
+- **VITE_MAX_POSTS=50**: Limits to 50 posts
+- **VITE_MAX_TAGS=10**: Limits tags per post
+
+#### **Option 2: Medium API (If you have existing token)**
+```env
+VITE_MEDIUM_ACCESS_TOKEN=your_existing_token
+```
+- Only works if you have a pre-existing Medium API token
+- More reliable but unavailable for new users
+
+#### **Option 3: Mock Data**
+- Automatically used when neither scraping nor API is configured
+- Provides sample data for testing and demonstration
 
 ## Terminal UI Components
 

@@ -7,23 +7,37 @@ echo "======================================"
 echo "📦 Installing dependencies..."
 npm install
 
-# Copy environment file
+# Create .env file if it doesn't exist
 if [ ! -f ".env" ]; then
     echo "📝 Creating .env file..."
-    cp .env.example .env
-    echo "✅ .env file created from .env.example"
+    cat > .env << 'EOF'
+VITE_MEDIUM_USERNAME=your_medium_username
+VITE_ENABLE_SCRAPING=true
+VITE_MAX_POSTS=0
+VITE_CACHE_MAX_AGE_HOURS=24
+EOF
+    echo "✅ .env file created"
 else
     echo "⚠️  .env file already exists"
 fi
 
+# Create data directory
+if [ ! -d "data" ]; then
+    echo "📁 Creating data directory..."
+    mkdir -p data
+    touch data/.gitkeep
+    echo "✅ Data directory created"
+fi
+
 echo ""
 echo "🔧 Configuration needed:"
-echo "1. Add your Medium access token to .env file:"
-echo "   VITE_MEDIUM_ACCESS_TOKEN=your_token_here"
+echo "1. Update your Medium username in .env file:"
+echo "   VITE_MEDIUM_USERNAME=your_username_here"
 echo ""
-echo "📚 Important notes:"
-echo "• Medium no longer issues new API tokens (as of 2024)"
-echo "• If you don't have a token, the app will use mock data"
-echo "• Dev.to and Hashnode sync buttons are ready for future implementation"
+echo "📚 Features:"
+echo "• Scrapes Medium posts via RSS feeds and web scraping"
+echo "• File-based JSON cache system for performance"
+echo "• Export/import cache functionality"
+echo "• Search and sync status tracking"
 echo ""
 echo "🎉 Setup complete! Run 'npm run dev' to start the application"
